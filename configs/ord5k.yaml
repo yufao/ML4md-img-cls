@@ -1,0 +1,14 @@
+dataset_name: ORD5K
+manifest: manifests/ORD5K.csv
+img_size: [256, 256]
+epochs: 20
+batch_size: 8
+kfold: 5
+lr: 1.0e-3
+prob_th: 0.5
+metric: miou
+iou_th: 0.5
+hard_percent: 0.2
+mc_steps: 8
+num_classes: 1   # 多分类时改为类别数（含背景）
+ignore_index: -1 # 若数据用 255 表示忽略像素，这里改为 255
