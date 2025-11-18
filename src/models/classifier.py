@@ -4,8 +4,9 @@ import torchvision.models as models
 
 
 class SimpleCNN(nn.Module):
-    """Very small CNN for smoke tests / CPU quick runs.
-    Output: logits (N, num_classes)
+    """Very small CNN用于快速烟雾测试/CPU验证。
+    输出: logits (N, num_classes)
+    适合小批量快速验证数据管线，不建议用于正式困难样本挖掘。
     """
     def __init__(self, num_classes: int = 8, dropout: float = 0.2):
         super().__init__()
@@ -26,8 +27,10 @@ class SimpleCNN(nn.Module):
 
 
 MODEL_REGISTRY = {
+    # ResNet 系列: 与 train_kfold.py 中 build_resnet 思路一致，可用于简化快速实验
     "resnet18": models.resnet18,
     "resnet50": models.resnet50,
+    # 轻量自定义模型
     "simple_cnn": SimpleCNN,
 }
 
@@ -42,15 +45,20 @@ except Exception:
 
 
 def build_classifier(model_name: str = "resnet18", num_classes: int = 8, pretrained: bool = False, dropout: float = 0.2):
-    """Build a multi-label classifier backbone.
+    """构建分类模型骨干（单标签或可扩展到多标签）。
 
     Args:
-        model_name: key in MODEL_REGISTRY.
-        num_classes: number of output labels.
-        pretrained: load torchvision pretrained weights (internet may be required).
-        dropout: dropout added before final FC for MC Dropout uncertainty.
+        model_name: MODEL_REGISTRY 中的键。支持 resnet18/resnet50/simple_cnn。
+        num_classes: 输出类别数。
+        pretrained: 是否加载 torchvision 预训练权重（需要网络或已缓存）。
+        dropout: 在最终 FC 前附加的 Dropout，便于 MC Dropout 不确定性。
+
     Returns:
-        nn.Module with attribute .forward(x) -> logits (N, num_classes)
+        nn.Module: forward(x) -> logits (N, num_classes)
+
+    注意：
+    - 若需要 1 通道输入，请在外部将灰度复制到 3 通道或修改第一层 conv。
+    - 更完整的 ResNet 输入通道修改、冻结阶段训练等功能在 src/utils/model_utils.build_resnet 中。
     """
     if model_name not in MODEL_REGISTRY:
         raise ValueError(f"Unsupported model_name {model_name}. Available: {list(MODEL_REGISTRY.keys())}")

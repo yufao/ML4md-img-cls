@@ -1,0 +1,42 @@
+experiment: nih14_resnet18_smoke
+multilabel: true
+meta_csv: manifests/nih14_manifest.csv
+img_root: rawig/NIH
+out_dir: outputs/nih14_smoke
+folds: 2
+seed: 42
+model: resnet18
+pretrained: true
+pure_gray: true
+img_size: 224
+batch_size: 32
+epochs: 1
+lr: 1e-4
+weight_decay: 1e-4
+num_workers: 8
+use_amp: true
+id_col: image_id
+path_col: image_path
+patient_col: patient_id
+label_cols:
+- Atelectasis
+- Cardiomegaly
+- Effusion
+- Infiltration
+- Mass
+- Nodule
+- Pneumonia
+- Pneumothorax
+- Consolidation
+- Edema
+- Emphysema
+- Fibrosis
+- Pleural_Thickening
+- Hernia
+freeze_warmup_epochs: 0
+log_jsonl: outputs/nih14_smoke/metrics.jsonl
+post:
+  ensemble: true
+  aggregate: true
+  skip_if_exists: false
+  difficult_ratio: 0.1

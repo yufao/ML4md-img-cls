@@ -1,0 +1,17 @@
+# 映射示例：将原始 CSV 的列名映射到标准列名
+# 使用 normalize_manifest.py --yaml_map 指定此文件，可生成统一列名的 manifest。
+# 支持为每个标准列提供一个或多个候选。
+# 标准列: image_id, image_path, label, patient_id
+
+image_id:
+  - img_uid
+  - id
+image_path:
+  - relative_path
+  - pathname
+label:
+  - cls
+  - category
+patient_id:
+  - pid
+  - patient

@@ -1,0 +1,36 @@
+# NIH14 multi-label training + post-processing example
+experiment: nih14_resnet50
+multilabel: true
+# IMPORTANT: Use the manifest built by build_nih_manifest_multilabel first
+meta_csv: manifests/nih14_manifest.csv
+img_root: rawig/NIH
+# If using Data_Entry_2017.csv, first run build_nih_manifest_multilabel to create manifest and point meta_csv to it
+# meta_csv: manifests/nih14_multilabel.csv
+out_dir: outputs/nih14_resnet50
+folds: 10
+seed: 42
+model: resnet50
+pretrained: true
+pure_gray: true
+img_size: 224
+batch_size: 64
+epochs: 10
+lr: 1e-4
+weight_decay: 1e-4
+num_workers: 8
+use_amp: true
+id_col: image_id
+path_col: image_path
+patient_col: patient_id
+# If using manifest with 14 binary columns, set label_cols explicitly
+label_cols: [Atelectasis, Cardiomegaly, Effusion, Infiltration, Mass, Nodule, Pneumonia, Pneumothorax, Consolidation, Edema, Emphysema, Fibrosis, Pleural_Thickening, Hernia]
+# Or if using a JSON vector column instead:
+# labels_json_col: labels_json
+freeze_warmup_epochs: 1
+log_jsonl: outputs/nih14_resnet50/metrics.jsonl
+
+post:
+  ensemble: true
+  aggregate: true
+  skip_if_exists: false
+  difficult_ratio: 0.1  
