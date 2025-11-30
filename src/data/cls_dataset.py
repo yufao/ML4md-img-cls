@@ -19,6 +19,31 @@ import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as T
 
+def get_transforms(image_size: int = 224, train: bool = True, mode: str = 'rgb3', aug_strategy: str = 'default') -> T.Compose:
+    if mode == 'rgb3':
+        norm_mean = [0.485, 0.456, 0.406]
+        norm_std = [0.229, 0.224, 0.225]
+    else:
+        norm_mean = [0.5]
+        norm_std = [0.25]
+    t_list: List[Any] = [T.Resize((image_size, image_size))]
+    
+    if train:
+        if aug_strategy == 'none':
+            # Conservative strategy: No geometric transforms, only color jitter
+            t_list += [T.ColorJitter(brightness=0.1, contrast=0.1)]
+        elif aug_strategy == 'fundus':
+            t_list += [T.RandomVerticalFlip(), T.RandomRotation(10)]
+        elif aug_strategy == 'cxr':
+            t_list += [T.RandomRotation(5)]
+        elif aug_strategy == 'mri':
+            t_list += [T.RandomHorizontalFlip(), T.RandomRotation(10)]
+        else:
+            t_list += [T.RandomHorizontalFlip(), T.RandomRotation(10)]
+            
+    t_list += [T.ToTensor(), T.Normalize(mean=norm_mean, std=norm_std)]
+    return T.Compose(t_list)
+
 """
 Classification dataset supporting:
 - CSV path or pre-loaded DataFrame
@@ -77,6 +102,7 @@ class MedicalImageDataset(Dataset):
         ct_center_col: Optional[str] = None,
         ct_width_col: Optional[str] = None,
         column_alias: Optional[Dict[str, Any]] = None,
+        aug_strategy: str = 'default',
     ):
         if dataframe is not None:
             self.df = dataframe.copy().reset_index(drop=True)
@@ -87,6 +113,7 @@ class MedicalImageDataset(Dataset):
         self.images_root = images_root
         self.transform = transform
         self.mode = mode
+        self.aug_strategy = aug_strategy
         # resolve columns via explicit args > alias dict > defaults
         alias = DEFAULT_ALIASES.copy()
         if column_alias:
@@ -211,19 +238,4 @@ class MedicalImageDataset(Dataset):
             'patient_id': patient_id
         }
 
-def get_transforms(image_size: int = 224, train: bool = True, mode: str = 'rgb3') -> T.Compose:
-    if mode == 'rgb3':
-        norm_mean = [0.485, 0.456, 0.406]
-        norm_std = [0.229, 0.224, 0.225]
-    else:
-        norm_mean = [0.5]
-        norm_std = [0.25]
 
-    t_list: List[Any] = [T.Resize((image_size, image_size))]
-    if train:
-        t_list += [
-            T.RandomHorizontalFlip(),
-            T.RandomRotation(10),
-        ]
-    t_list += [T.ToTensor(), T.Normalize(mean=norm_mean, std=norm_std)]
-    return T.Compose(t_list)

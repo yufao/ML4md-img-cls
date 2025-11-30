@@ -1,14 +1,27 @@
-dataset_name: ORD5K
-manifest: manifests/ORD5K.csv
-img_size: [256, 256]
-epochs: 20
-batch_size: 8
-kfold: 5
-lr: 1.0e-3
-prob_th: 0.5
-metric: miou
-iou_th: 0.5
-hard_percent: 0.2
-mc_steps: 8
-num_classes: 1   # 多分类时改为类别数（含背景）
-ignore_index: -1 # 若数据用 255 表示忽略像素，这里改为 255
+experiment: ord5k_resnet50_multilabel
+meta_csv: manifests/ord5k_cls_multilabel.csv
+img_root: rawig/ORD5K/preprocessed_images
+out_dir: outputs/ord5k_cls_multilabel_smoke
+folds: 2
+seed: 42
+model: resnet18
+multilabel: true
+pretrained: true
+pure_gray: false
+img_size: 224
+batch_size: 64
+epochs: 5
+lr: 1e-4
+weight_decay: 1e-4
+num_workers: 8
+use_amp: true
+prob_th: 0.2
+print_debug: true
+label_cols: [N, D, G, C, A, H, M, O]
+id_col: sample_id
+path_col: image_path
+# 如无真实分组标识，避免将每条样本当作独立 group 造成不稳定折分
+patient_col: 
+apply_ct_window: false
+freeze_warmup_epochs: 2
+log_jsonl: outputs/ord5k_cls_multilabel_smoke/metrics.jsonl

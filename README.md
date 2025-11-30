@@ -57,8 +57,15 @@ python -m src.scripts.train_kfold \
   --img_root rawig/ORD5K/preprocessed_images \
   --out_dir outputs/ord5k_cls \
   --folds 5 --model resnet50 --pretrained --use_amp \
-  --epochs 20 --batch_size 32 --lr 1e-4 --weight_decay 1e-4
+  --epochs 20 --batch_size 32 --lr 1e-4 --weight_decay 1e-4 \
+  --aug_strategy fundus
 ```
+**数据增强策略 (`--aug_strategy`)：**
+- `fundus`: 垂直翻转 + 旋转（适用于眼底图，避免水平翻转破坏左右眼特征）。
+- `cxr`: 仅旋转（适用于胸片，避免翻转破坏心脏位置与重力特征）。
+- `mri`: 水平翻转 + 旋转（适用于脑部 MRI，增加左右脑病灶多样性）。
+- `default`: 水平翻转 + 旋转（适用于通用自然图像）。
+
 若数据纯灰度：添加 `--pure_gray`；若启用 CT 窗宽窗位：添加 `--apply_ct_window`。
 
 产物：

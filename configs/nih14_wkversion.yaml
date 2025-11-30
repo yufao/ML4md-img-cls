@@ -7,18 +7,20 @@ img_root: rawig/NIH
 # If using Data_Entry_2017.csv, first run build_nih_manifest_multilabel to create manifest and point meta_csv to it
 # meta_csv: manifests/nih14_multilabel.csv
 out_dir: outputs/nih14_resnet50
-folds: 10
+folds: 5
 seed: 42
 model: resnet50
 pretrained: true
 pure_gray: true
 img_size: 224
 batch_size: 64
-epochs: 10
+epochs: 20
 lr: 1e-4
 weight_decay: 1e-4
 num_workers: 8
 use_amp: true
+# 2023-10-27 Update: 采用保守策略 (none)，禁用所有几何变换，仅保留色彩抖动，以彻底避免解剖学特征破坏
+aug_strategy: none
 id_col: image_id
 path_col: image_path
 patient_col: patient_id

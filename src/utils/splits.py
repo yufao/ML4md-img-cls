@@ -44,6 +44,15 @@ def multilabel_stratified_group_kfold(
     rng = np.random.RandomState(seed)
     groups = df[group_col].astype(str).values
     uniq_groups = np.array(sorted(pd.unique(groups)))
+    if len(uniq_groups) == 0:
+        # 无组信息时，退化为普通 K 折（按索引均分）
+        idx = np.arange(len(df))
+        folds = np.array_split(idx, n_splits)
+        for k in range(n_splits):
+            va_idx = folds[k]
+            tr_idx = np.setdiff1d(idx, va_idx)
+            yield tr_idx, va_idx
+        return
     # Map group -> indices
     group_to_indices = {g: np.where(groups == g)[0] for g in uniq_groups}
     # Group label vectors
@@ -56,14 +65,25 @@ def multilabel_stratified_group_kfold(
     order = np.argsort([-group_label_sum[g].sum() for g in uniq_groups])
     ordered_groups = uniq_groups[order]
 
-    # Initialize folds
+    # Initialize folds: 先保证每个折至少分到一个组
     folds = [set() for _ in range(n_splits)]
     fold_label_sum = [np.zeros_like(expected_per_fold) for _ in range(n_splits)]
 
-    for g in ordered_groups:
+    start = 0
+    # 若组数量少于折数，缩减有效折数，避免空折
+    n_eff = min(n_splits, len(ordered_groups))
+    # 先给前 n_eff 个组“一人一个折”
+    for k in range(n_eff):
+        g = ordered_groups[k]
+        folds[k].add(g)
+        fold_label_sum[k] = fold_label_sum[k] + group_label_sum[g]
+    start = n_eff
+
+    # 再对剩余组进行贪心分配
+    for g in ordered_groups[start:]:
         costs = []
         gvec = group_label_sum[g]
-        for k in range(n_splits):
+        for k in range(n_eff):
             new_sum = fold_label_sum[k] + gvec
             cost = ((new_sum - expected_per_fold) ** 2).sum()
             costs.append(cost)
@@ -81,8 +101,11 @@ def multilabel_stratified_group_kfold(
             group_to_fold[g] = k
 
     idx = np.arange(len(df))
-    for k in range(n_splits):
+    for k in range(n_eff):
         va_groups = {g for g, f in group_to_fold.items() if f == k}
         va_idx = np.concatenate([group_to_indices[g] for g in va_groups]) if va_groups else np.array([], dtype=int)
         tr_idx = np.setdiff1d(idx, va_idx)
         yield tr_idx, va_idx
+    # 若 n_eff < n_splits，补齐多余折为空验证集（不常见，仅为兼容）
+    for k in range(n_eff, n_splits):
+        yield idx, np.array([], dtype=int)

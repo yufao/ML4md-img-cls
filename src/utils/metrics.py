@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-# Binary metrics
+# 二值分割度量 (Binary metrics)
 
 def binarize_logits(logits, prob_th=0.5):
     return (torch.sigmoid(logits) > prob_th).float()
@@ -12,20 +12,20 @@ def dice_score_binary(logits, targets, prob_th=0.5, eps=1e-6):
     inter = (preds * targets).sum(dim=(2,3))
     union = preds.sum(dim=(2,3)) + targets.sum(dim=(2,3))
     dice = (2 * inter + eps) / (union + eps)
-    return dice  # (N,)
+    return dice  # (N,) 每个样本的 Dice 系数
 
 def iou_score_binary(logits, targets, prob_th=0.5, eps=1e-6):
     preds = binarize_logits(logits, prob_th)
     inter = (preds * targets).sum(dim=(2,3))
     union = preds.sum(dim=(2,3)) + targets.sum(dim=(2,3)) - inter
     iou = (inter + eps) / (union + eps)
-    return iou  # (N,)
+    return iou  # (N,) 每个样本的 IoU
 
-# Multiclass metrics
+# 多类别分割度量 (Multiclass metrics)
 
 @torch.no_grad()
 def miou_multiclass(logits, targets_long, num_classes, ignore_index: int=-1, eps=1e-6):
-    preds = torch.argmax(logits, dim=1)  # N,H,W
+    preds = torch.argmax(logits, dim=1)  # N,H,W 逐像素取最大概率类别
     N, H, W = preds.shape
     miou_list = []
     mdice_list = []
@@ -40,9 +40,9 @@ def miou_multiclass(logits, targets_long, num_classes, ignore_index: int=-1, eps
             miou_list.append(torch.tensor(float("nan"), device=logits.device))
             mdice_list.append(torch.tensor(float("nan"), device=logits.device))
             continue
-        pred_oh = F.one_hot(pred_n, num_classes=num_classes).float()  # [P, C]
+        pred_oh = F.one_hot(pred_n, num_classes=num_classes).float()  # [P, C] P 为有效像素数
         tgt_oh  = F.one_hot(tgt_n.clamp(min=0), num_classes=num_classes).float()
-        inter = (pred_oh * tgt_oh).sum(dim=0)                  # C
+        inter = (pred_oh * tgt_oh).sum(dim=0)                  # C 每类交集面积
         pred_area = pred_oh.sum(dim=0)
         tgt_area  = tgt_oh.sum(dim=0)
         union = pred_area + tgt_area - inter + eps
@@ -51,7 +51,7 @@ def miou_multiclass(logits, targets_long, num_classes, ignore_index: int=-1, eps
         miou_list.append(iou_c[present].mean() if present.any() else torch.tensor(float("nan"), device=logits.device))
         dice_c = (2*inter + eps) / (pred_area + tgt_area + eps)
         mdice_list.append(dice_c[present].mean() if present.any() else torch.tensor(float("nan"), device=logits.device))
-    return torch.stack(miou_list), torch.stack(mdice_list)  # (N,), (N,)
+    return torch.stack(miou_list), torch.stack(mdice_list)  # (N,), (N,) 每个样本的 mIoU 与 mDice
 
 @torch.no_grad()
 def mc_dropout_uncertainty(model, images, num_classes=1, mc_steps=8):
@@ -69,6 +69,6 @@ def mc_dropout_uncertainty(model, images, num_classes=1, mc_steps=8):
             ent = -(p * torch.log(p)).sum(dim=1, keepdim=True) # N,1,H,W
         ent_sum += ent
     ent_mean = ent_sum / mc_steps
-    ent_scalar = ent_mean.mean(dim=(1,2,3))  # (N,)
+    ent_scalar = ent_mean.mean(dim=(1,2,3))  # (N,) 每个样本的平均熵不确定性
     model.eval()
     return ent_scalar

@@ -1,0 +1,35 @@
+experiment: brain_tumor_resnet50
+multilabel: false
+meta_csv: manifests/mri_manifest.csv
+img_root: rawig/MRItumor
+out_dir: outputs/brain_tumor_resnet50
+folds: 5
+seed: 42
+model: resnet50
+pretrained: true
+pure_gray: true
+pure_gray: false
+img_size: 224
+epochs: 20
+lr: 1e-4
+weight_decay: 1e-4
+batch_size: 64
+num_workers: 8
+use_amp: true
+# 2023-10-27 Update: 采用保守策略 (none)，禁用所有几何变换，仅保留色彩抖动，以彻底避免解剖学特征破坏
+aug_strategy: none
+id_col: image_id
+path_col: image_path
+patient_col: patient_id
+prob_th: 0.5
+print_debug: true
+label_col: class_index
+freeze_warmup_epochs: 1
+freeze_warmup_epochs: 0
+use_amp: false
+log_jsonl: outputs/brain_tumor_resnet50/metrics.jsonl
+
+post:
+  ensemble: true
+  aggregate: true
+  skip_if_exists: false

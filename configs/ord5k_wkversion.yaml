@@ -1,10 +1,11 @@
-experiment: ord5k_resnet50
-meta_csv: rawig/ORD5K/full_df.csv
+experiment: ord5k_resnet50_multilabel
+meta_csv: manifests/ord5k_cls_multilabel.csv
 img_root: rawig/ORD5K/preprocessed_images
-out_dir: outputs/ord5k_cls
+out_dir: outputs/ord5k_cls_multilabel
 folds: 10
 seed: 42
 model: resnet50
+multilabel: true
 pretrained: true
 pure_gray: false
 img_size: 224
@@ -14,10 +15,16 @@ lr: 1e-4
 weight_decay: 1e-4
 num_workers: 8
 use_amp: true
-label_col: label
-id_col: image_id
+prob_th: 0.2
+# 注意：已在代码中将 RandomHorizontalFlip 改为 RandomVerticalFlip 以适应眼底图像的左右眼解剖特征
+# 2023-10-27 Update: 采用保守策略 (none)，禁用所有几何变换，仅保留色彩抖动，以彻底避免解剖学特征破坏
+aug_strategy: none
+print_debug: true
+label_cols: [N, D, G, C, A, H, M, O]
+id_col: sample_id
 path_col: image_path
-patient_col: patient_id
+# 如无真实分组标识，避免将每条样本当作独立 group 造成不稳定折分
+patient_col: 
 apply_ct_window: false
-freeze_warmup_epochs: 2
-log_jsonl: outputs/ord5k_cls/metrics.jsonl
+freeze_warmup_epochs: 1
+log_jsonl: outputs/ord5k_cls_multilabel/metrics.jsonl

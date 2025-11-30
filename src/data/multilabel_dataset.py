@@ -27,7 +27,7 @@ def _find_first_col(df: pd.DataFrame, candidates: Sequence[str]):
             return c
     return None
 
-def get_transforms(image_size: int = 224, train: bool = True, mode: str = 'rgb3') -> T.Compose:
+def get_transforms(image_size: int = 224, train: bool = True, mode: str = 'rgb3', aug_strategy: str = 'default') -> T.Compose:
     if mode == 'rgb3':
         norm_mean = [0.485, 0.456, 0.406]
         norm_std = [0.229, 0.224, 0.225]
@@ -35,8 +35,24 @@ def get_transforms(image_size: int = 224, train: bool = True, mode: str = 'rgb3'
         norm_mean = [0.5]
         norm_std = [0.25]
     t_list: List[Any] = [T.Resize((image_size, image_size))]
+    
     if train:
-        t_list += [T.RandomHorizontalFlip(), T.RandomRotation(10)]
+        if aug_strategy == 'none':
+            # 保守策略：无几何变换，仅色彩抖动
+            t_list += [T.ColorJitter(brightness=0.1, contrast=0.1)]
+        elif aug_strategy == 'fundus':
+            # 眼底图：垂直翻转安全，水平翻转破坏左右眼特征
+            t_list += [T.RandomVerticalFlip(), T.RandomRotation(10)]
+        elif aug_strategy == 'cxr':
+            # 胸片：不翻转（重力依赖），仅微小旋转
+            t_list += [T.RandomRotation(5)]
+        elif aug_strategy == 'mri':
+            # 脑部MRI：水平翻转安全且推荐（增加左右脑病灶多样性）
+            t_list += [T.RandomHorizontalFlip(), T.RandomRotation(10)]
+        else:
+            # 默认通用策略 (default)
+            t_list += [T.RandomHorizontalFlip(), T.RandomRotation(10)]
+            
     t_list += [T.ToTensor(), T.Normalize(mean=norm_mean, std=norm_std)]
     return T.Compose(t_list)
 
@@ -54,6 +70,7 @@ class MultiLabelImageDataset(Dataset):
         patient_col: Optional[str] = None,
         label_cols: Optional[Sequence[str]] = None,
         labels_json_col: Optional[str] = None,
+        aug_strategy: str = 'default',
     ):
         if dataframe is not None:
             self.df = dataframe.copy().reset_index(drop=True)
@@ -64,6 +81,7 @@ class MultiLabelImageDataset(Dataset):
         self.images_root = images_root
         self.transform = transform
         self.mode = mode
+        self.aug_strategy = aug_strategy
         self.id_col = id_col or _find_first_col(self.df, DEFAULT_ALIASES['image_id'])
         self.path_col = path_col or _find_first_col(self.df, DEFAULT_ALIASES['image_path'])
         self.patient_col = patient_col or _find_first_col(self.df, DEFAULT_ALIASES['patient_id'])

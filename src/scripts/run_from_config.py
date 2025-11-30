@@ -48,38 +48,48 @@ import yaml
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--config', required=True, help='Path to YAML config')
-    ap.add_argument('--post_only', action='store_true', help='Only run post-processing (ensemble + aggregate)')
+    ap.add_argument('--config', required=True, help='YAML 配置文件路径')
+    ap.add_argument('--post_only', action='store_true', help='仅执行后处理（集成 + 困难样本聚合），跳过训练')
     args = ap.parse_args()
 
     with open(args.config, 'r') as f:
         cfg = yaml.safe_load(f)
 
     multilabel = bool(cfg.get('multilabel', False))
-    # Build CLI args for train scripts
+    # 构建训练脚本命令行参数列表
     cmd = [sys.executable, '-m', 'src.scripts.train_kfold_multilabel' if multilabel else 'src.scripts.train_kfold']
     def add_flag(k, v):
+        # 忽略 None 或空字符串的值，避免传递 "--arg None" 或空值
+        if v is None:
+            return
+        if isinstance(v, str) and v.strip() == '':
+            return
         if isinstance(v, bool):
             if v:
                 cmd.append(f'--{k}')
         else:
             cmd.extend([f'--{k}', str(v)])
 
+    # 通用参数（单标签与多标签都需要的）
     keys = [
         'meta_csv','img_root','out_dir','folds','seed','model','pretrained','pure_gray','img_size','batch_size',
         'epochs','lr','weight_decay','num_workers','use_amp','label_col','id_col','path_col','patient_col',
-        'apply_ct_window','freeze_warmup_epochs','log_jsonl'
+        'apply_ct_window','freeze_warmup_epochs','log_jsonl','aug_strategy'
     ]
     for k in keys:
         if k in cfg:
             add_flag(k, cfg[k])
 
-    # Multilabel-specific args
+    # 多标签特有参数（避免在单标签脚本上出现未知参数导致报错）
     if multilabel:
         if 'label_cols' in cfg and isinstance(cfg['label_cols'], (list, tuple)):
             add_flag('label_cols', ','.join([str(x) for x in cfg['label_cols']]))
         if 'labels_json_col' in cfg and cfg['labels_json_col']:
             add_flag('labels_json_col', cfg['labels_json_col'])
+        if 'prob_th' in cfg:
+            add_flag('prob_th', cfg['prob_th'])
+        if 'print_debug' in cfg and cfg['print_debug']:
+            add_flag('print_debug', True)
 
     if not args.post_only:
         print('Running:', ' '.join(cmd))
@@ -87,14 +97,14 @@ def main():
     else:
         print('Skip training (post_only=True)')
 
-    # Post-processing: ensemble prediction and difficult sample aggregation
+    # 后处理阶段：模型集成预测与困难样本聚合
     post_cfg = cfg.get('post', {}) if isinstance(cfg, dict) else {}
     do_ensemble = post_cfg.get('ensemble', True)
     do_aggregate = post_cfg.get('aggregate', True)
     skip_if_exists = post_cfg.get('skip_if_exists', False)
     difficult_ratio = post_cfg.get('difficult_ratio', None)
 
-    # Gather common args
+    # 汇总常用参数以便传递给集成脚本
     out_dir = cfg.get('out_dir')
     meta_csv = cfg.get('meta_csv')
     img_root = cfg.get('img_root', '')

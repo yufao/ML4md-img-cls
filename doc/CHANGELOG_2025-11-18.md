@@ -34,6 +34,12 @@
 - 已验证与 NIH 烟雾测试兼容（2 折、1 轮）。
 - 若未设置 `post.difficult_ratio`，聚合器回退到分位阈值模式（`--entropy_q/--disagree_q`）。
 
+## Bug 修复
+- 修复多标签组分层折分在极端情况下出现空验证折的问题：
+  - 由于分组分折缺乏约束，出现把所有组塞进少数折，导致yvl为空，训练启动失败
+  - `src/utils/splits.py` 中 `multilabel_stratified_group_kfold` 先对前 n_splits 个组做“每折至少一个组”的预分配，避免空折；
+  - 若组数量少于折数，自动缩减有效折数并补齐空折（仅兼容用途），避免 `evaluate` 阶段 `np.concatenate` 报错。
+
 ## 后续建议
 - 将难度得分权重作为配置项开放（例如 `post.score_weights: {entropy:0.7, disagree:0.3}`）。
 - 导出工具支持按子目录分组（例如按类或病人）。

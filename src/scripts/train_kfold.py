@@ -1,12 +1,12 @@
-"""K-fold classification training with ResNet backbone and difficult sample recording.
+"""使用 ResNet 进行单标签图像分类的 K 折训练脚本，并记录困难样本相关信息。
 
-Features:
-- Patient-level stratified splitting (if patient_id column exists)
-- Warmup freeze epochs then full fine-tuning
-- Class weight balancing (inverse frequency)
-- Optional AMP (mixed precision)
-- Per-fold validation prediction CSV (for difficult sample mining)
-- Optional JSONL logging of metrics
+功能特性：
+- 支持基于患者（patient_id）分组的分层 K 折，减少数据泄露风险
+- 预热阶段可冻结骨干网络，随后解冻进行完整微调
+- 类别权重自动按出现频次的倒数归一化，缓解类别不均衡
+- 可选 AMP 混合精度以提升速度与显存效率
+- 每折输出验证集预测 CSV（用于后续困难样本挖掘 / 集成预测）
+- 可选 JSONL 格式的度量日志追加写入
 """
 import os
 import argparse
@@ -50,7 +50,7 @@ def entropy_np(probs: np.ndarray) -> float:
     p = np.clip(probs, 1e-12, 1.0)
     return float(-(p * np.log(p)).sum())
 
-# Column alias mapping for robust CSV schema handling (kept in sync with cls_dataset)
+# 列别名映射：用于在 CSV 中鲁棒解析不同命名（需与 cls_dataset 同步）
 DEFAULT_ALIASES = {
     'image_id': ['image_id', 'id', 'uid', 'img_id', 'filename', 'name'],
     'image_path': ['image_path', 'path', 'file', 'filepath', 'image', 'img_path', 'img'],
@@ -65,7 +65,7 @@ def _find_first_col(df: pd.DataFrame, candidates):
     return None
 
 def resolve_columns(meta: pd.DataFrame, id_col: str, path_col: str, label_col: str, patient_col: str):
-    # if explicit col not present, try aliases
+    # 若显式列名不存在则按别名候选顺序尝试匹配
     rid = id_col if id_col in meta.columns else _find_first_col(meta, DEFAULT_ALIASES['image_id'])
     rpath = path_col if path_col in meta.columns else _find_first_col(meta, DEFAULT_ALIASES['image_path'])
     rlab = label_col if label_col in meta.columns else _find_first_col(meta, DEFAULT_ALIASES['label'])
@@ -172,6 +172,7 @@ def main():
     parser.add_argument('--path_col', default='image_path')
     parser.add_argument('--patient_col', default='patient_id')
     parser.add_argument('--apply_ct_window', action='store_true')
+    parser.add_argument('--aug_strategy', default='default', help='Augmentation strategy: default, fundus, cxr, mri')
     parser.add_argument('--freeze_warmup_epochs', type=int, default=2)
     parser.add_argument('--log_jsonl', default='', help='(optional) path to JSONL file to append metrics')
     args = parser.parse_args()
@@ -179,7 +180,7 @@ def main():
     set_seed(args.seed)
     os.makedirs(args.out_dir, exist_ok=True)
     meta = pd.read_csv(args.meta_csv)
-    # Resolve column names robustly
+    # 鲁棒解析列名（显式参数 > 别名字典），若缺失关键列则报错
     id_col, path_col, label_col, patient_col = resolve_columns(
         meta,
         id_col=args.id_col,
@@ -189,7 +190,8 @@ def main():
     )
     logger = setup_logger()
     logger.info(f"Columns resolved: id={id_col}, path={path_col}, label={label_col}, patient={patient_col}")
-    # Encode labels to integer indices to support string labels
+    logger.info(f"Augmentation strategy: {args.aug_strategy}")
+    # 将可能的字符串类别编码为整数索引，便于后续模型训练与权重计算
     codes, uniques = pd.factorize(meta[label_col])
     meta['_label_idx'] = codes.astype(int)
     enc_label_col = '_label_idx'
@@ -199,13 +201,24 @@ def main():
     in_ch = 1 if args.pure_gray else 3
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Build folds
+    # 构建 K 折：有患者列则做“分组+分层”折分，否则普通 StratifiedKFold
     has_patient = (patient_col is not None) and (patient_col in meta.columns)
+    from sklearn.model_selection import StratifiedKFold
     if has_patient:
         folds_iter = stratified_group_kfold(meta, y_col=enc_label_col, group_col=patient_col, n_splits=args.folds, seed=args.seed)
         folds = list(folds_iter)
+        # 检查每折验证集是否覆盖全部类别，不足则回退普通 StratifiedKFold
+        need_fallback = False
+        for _, va_idx in folds:
+            uniq = np.unique(meta.iloc[va_idx][enc_label_col].values)
+            if len(uniq) < num_classes:
+                need_fallback = True
+                break
+        if need_fallback:
+            logger.info("Detected validation folds with missing classes; fallback to StratifiedKFold without patient grouping.")
+            skf = StratifiedKFold(n_splits=args.folds, shuffle=True, random_state=args.seed)
+            folds = list(skf.split(meta, meta[enc_label_col].values))
     else:
-        from sklearn.model_selection import StratifiedKFold
         skf = StratifiedKFold(n_splits=args.folds, shuffle=True, random_state=args.seed)
         folds = list(skf.split(meta, meta[enc_label_col].values))
 
@@ -217,27 +230,37 @@ def main():
         train_df = meta.iloc[tr_idx].reset_index(drop=True)
         val_df = meta.iloc[va_idx].reset_index(drop=True)
 
+        # 调试：输出当前折训练/验证集中各类别样本数分布
+        try:
+            tr_cnt = np.bincount(train_df[enc_label_col].values, minlength=num_classes)
+            va_cnt = np.bincount(val_df[enc_label_col].values, minlength=num_classes)
+            logger.info(f"Fold {fold_idx} label dist train={tr_cnt.tolist()} val={va_cnt.tolist()}")
+        except Exception:
+            pass
+
         train_ds = MedicalImageDataset(
             dataframe=train_df,
             images_root=args.img_root,
-            transform=get_transforms(args.img_size, True, input_mode),
+            transform=get_transforms(args.img_size, True, input_mode, aug_strategy=args.aug_strategy),
             mode=input_mode,
             id_col=id_col,
             path_col=path_col,
             label_col=enc_label_col,
             patient_col=patient_col,
             apply_ct_window=args.apply_ct_window,
+            aug_strategy=args.aug_strategy,
         )
         val_ds = MedicalImageDataset(
             dataframe=val_df,
             images_root=args.img_root,
-            transform=get_transforms(args.img_size, False, input_mode),
+            transform=get_transforms(args.img_size, False, input_mode, aug_strategy=args.aug_strategy),
             mode=input_mode,
             id_col=id_col,
             path_col=path_col,
             label_col=enc_label_col,
             patient_col=patient_col,
             apply_ct_window=args.apply_ct_window,
+            aug_strategy=args.aug_strategy,
         )
 
         train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
@@ -251,7 +274,7 @@ def main():
             freeze_backbone=(args.freeze_warmup_epochs > 0),
         ).to(device)
         optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.weight_decay)
-        # Use new torch.amp API to avoid deprecation warnings
+        # 使用新版 torch.amp API 以避免旧接口弃用告警
         scaler = torch.amp.GradScaler('cuda') if args.use_amp else None
         cls_weight = compute_class_weights(train_df[enc_label_col].values, num_classes)
 
